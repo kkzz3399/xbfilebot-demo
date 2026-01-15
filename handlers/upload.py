@@ -1,5 +1,5 @@
 # handlers/upload.py
-# 完整上传模块（已加入 bind_bot 文本早期守护与对 buttonpost 的协作保护）
+# 完整上传模块（已加入 bind_bot 文本早期守护与对 buttonpost 的协作保护，以及消息去重）
 from pyrogram import filters
 from pyrogram.enums import ParseMode
 from db import cursor, conn, db_lock, get_latest_upload_batch
@@ -14,6 +14,28 @@ import traceback
 
 pending_groups = defaultdict(list)
 processed_groups = set()
+
+# 消息去重：记录最近处理过的消息 ID
+_processed_messages = {}  # {message_id: timestamp}
+_dedup_lock = asyncio.Lock()
+MESSAGE_DEDUP_TTL = 10  # 10秒内相同消息ID视为重复
+
+async def _is_duplicate_message(message_id):
+    """检查消息是否在短期内已处理过（去重）"""
+    async with _dedup_lock:
+        now = int(time.time())
+        # 清理过期记录
+        expired = [mid for mid, ts in _processed_messages.items() if now - ts > MESSAGE_DEDUP_TTL]
+        for mid in expired:
+            del _processed_messages[mid]
+        
+        # 检查是否重复
+        if message_id in _processed_messages:
+            return True
+        
+        # 记录此消息
+        _processed_messages[message_id] = now
+        return False
 
 
 def import_buttonpost_module():
@@ -126,6 +148,12 @@ def register_upload(app):
     async def receive_file(client, message):
         user_id = message.from_user.id
         ts_now = int(time.time())
+        
+        # 消息去重：检查是否在短期内已处理过此消息
+        message_id = message.id
+        if await _is_duplicate_message(message_id):
+            print(f"[upload.debug] duplicate message {message_id} from {user_id}, skipping")
+            return
 
         # EARLY PROTECTION: if user currently in bind_bot flow, let bindbot handle token/text; don't process as file
         try:

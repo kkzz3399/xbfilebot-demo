@@ -244,7 +244,7 @@ def register_start(app):
         text = (
             "🔒 绑定你自己的机器人 - 简短教程\n\n"
             "1️⃣ 打开 @BotFather，发送 /newbot 并按提示完成机器人创建，创建完成后 BotFather 会返回一个 token（示例：123456789:AAABBBcccDDD...），请复制该 token。\n\n"
-            "2️⃣ 回到本对话，点击下方"我已创建并准备粘贴 token"，然后按提示回复（或直接发送） token。\n\n"
+            "2️⃣ 回到本对话，点击下方\"我已创建并准备粘贴 token\"，然后按提示回复（或直接发送） token。\n\n"
             "⚠️ 请务必确认你是该机器人的拥有者，不要把 token 泄露给他人。"
         )
         kb = InlineKeyboardMarkup([
