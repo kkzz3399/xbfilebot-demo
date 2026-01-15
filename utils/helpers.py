@@ -88,3 +88,39 @@ def add_admin(target_user_id, added_by=None):
     except Exception as e:
         print(f"[helpers.add_admin] 插入 admins 失败: {e}")
         return False
+
+def get_user_folders(user_id, limit=50):
+    """
+    获取用户的文件夹列表。
+    返回 list of tuples: (batch_id, folder_name, total_photos, total_videos, total_other, forward_allowed)
+    若出错返回空列表。
+    """
+    try:
+        cursor.execute("""
+            SELECT batch_id, folder_name, total_photos, total_videos, total_other, forward_allowed
+            FROM batches
+            WHERE user_id = ? AND status = 'finished' AND folder_name IS NOT NULL AND folder_name != ''
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (user_id, limit))
+        folders = cursor.fetchall()
+        
+        # 规范化为 tuple 列表
+        result = []
+        for r in folders:
+            try:
+                bid = r["batch_id"]
+                fname = r["folder_name"]
+                p = r["total_photos"]
+                v = r["total_videos"]
+                o = r["total_other"]
+                fa = r["forward_allowed"]
+            except Exception:
+                # Fallback to index access
+                bid, fname, p, v, o, fa = r[0], r[1], r[2], r[3], r[4], r[5]
+            result.append((bid, fname, p, v, o, fa))
+        
+        return result
+    except Exception as e:
+        print(f"[helpers.get_user_folders] 获取文件夹失败: {e}")
+        return []

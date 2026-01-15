@@ -6,7 +6,7 @@ from pyrogram.types import (
 from db import cursor, conn, get_latest_upload_batch, db_lock
 from utils.keyboard import main_menu, uploading_menu, waiting_upload_menu
 from handlers.share import handle_share_link
-from utils.helpers import is_vip, get_vip_remaining_days, is_admin, add_admin
+from utils.helpers import is_vip, get_vip_remaining_days, is_admin, add_admin, get_user_folders
 import time
 import uuid
 
@@ -181,56 +181,21 @@ def register_start(app):
             await message.reply("⚠️ 文件夹管理功能仅限会员使用。")
             return
         
-        # 调用 common.py 中的逻辑（通过模拟 callback）
+        # 获取文件夹列表
         try:
-            from handlers.common import _handle_manage_folders
-            # 创建一个模拟的 callback 对象
-            class FakeCallback:
-                def __init__(self, msg, user):
-                    self.message = msg
-                    self.from_user = user
-                    self.data = "manage_folders"
-                async def answer(self, *args, **kwargs):
-                    pass
+            folders = get_user_folders(user_id, limit=50)
+            if not folders:
+                await message.reply("📂 你还没有创建任何文件夹", reply_markup=_create_main_reply_keyboard(user_id))
+                return
             
-            fake_cb = FakeCallback(message, message.from_user)
-            # 直接获取文件夹列表并显示
-            try:
-                cursor.execute("""
-                    SELECT batch_id, folder_name, total_photos, total_videos, total_other, forward_allowed
-                    FROM batches
-                    WHERE user_id = ? AND status = 'finished' AND folder_name IS NOT NULL AND folder_name != ''
-                    ORDER BY timestamp DESC
-                    LIMIT 50
-                """, (user_id,))
-                folders = cursor.fetchall()
-                if not folders:
-                    await message.reply("📂 你还没有创建任何文件夹", reply_markup=_create_main_reply_keyboard(user_id))
-                    return
-                
-                from utils.keyboard import folder_list_menu
-                rows = []
-                for r in folders:
-                    try:
-                        bid = r["batch_id"]
-                        fname = r["folder_name"]
-                        p = r["total_photos"]
-                        v = r["total_videos"]
-                        o = r["total_other"]
-                        fa = r["forward_allowed"]
-                    except Exception:
-                        bid, fname, p, v, o, fa = r[0], r[1], r[2], r[3], r[4], r[5]
-                    rows.append((bid, fname, p, v, o, fa))
-                
-                await message.reply(
-                    "📂 管理我的文件夹（显示最近50个）",
-                    reply_markup=folder_list_menu(user_id, rows, from_finish=False)
-                )
-            except Exception as e:
-                print(f"[start.text_manage_folders] error: {e}")
-                await message.reply("❌ 获取文件夹列表失败")
+            from utils.keyboard import folder_list_menu
+            await message.reply(
+                "📂 管理我的文件夹（显示最近50个）",
+                reply_markup=folder_list_menu(user_id, folders, from_finish=False)
+            )
         except Exception as e:
             print(f"[start.text_manage_folders] exception: {e}")
+            await message.reply("❌ 获取文件夹列表失败")
     
     @app.on_message(filters.private & filters.text & filters.regex("^🔐 绑定机器人$"))
     async def handle_text_bind_bot(client, message):

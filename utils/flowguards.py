@@ -17,8 +17,18 @@ try:
     _conn = None  # Will use cursor instead
     _lock = _main_lock
     _use_cursor = True
-except Exception:
-    # fallback: create local db
+except (ImportError, ModuleNotFoundError) as e:
+    # DB module not available, use fallback
+    print(f"[flowguards] db module not available ({e}), using local SQLite")
+    _conn = sqlite3.connect("flowguards.db", check_same_thread=False)
+    _conn.row_factory = sqlite3.Row
+    _cursor = None
+    _lock = threading.Lock()
+    _conn_proxy = None
+    _use_cursor = False
+except Exception as e:
+    # Unexpected error during import
+    print(f"[flowguards] unexpected error importing db module: {e}")
     _conn = sqlite3.connect("flowguards.db", check_same_thread=False)
     _conn.row_factory = sqlite3.Row
     _cursor = None

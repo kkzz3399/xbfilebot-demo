@@ -3,13 +3,16 @@
 # 用于调试和避免用户 UI 卡住
 from pyrogram import filters
 
+# 回调兜底处理器的优先级（确保最低）
+FALLBACK_HANDLER_PRIORITY = 9999
+
 def register_callback_fallback(app):
     """
-    注册一个低优先级的回调处理器（group=9999），
+    注册一个低优先级的回调处理器（group=FALLBACK_HANDLER_PRIORITY），
     捕获所有未被其它回调处理器匹配的 callback_query。
     记录到控制台并答复 callback 避免 UI 卡住。
     """
-    @app.on_callback_query(group=9999)
+    @app.on_callback_query(group=FALLBACK_HANDLER_PRIORITY)
     async def _callback_fallback_handler(client, cb):
         try:
             user_id = cb.from_user.id if cb.from_user else "unknown"

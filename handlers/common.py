@@ -4,7 +4,7 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from db import cursor, conn, db_lock, get_user_bots_for_user, get_user_bot_by_id
 from utils.keyboard import main_menu, folder_list_menu
-from utils.helpers import is_vip, get_vip_remaining_days
+from utils.helpers import is_vip, get_vip_remaining_days, get_user_folders
 import time
 import traceback
 
@@ -266,14 +266,7 @@ def register_common(app):
     async def _handle_manage_folders(client, cb):
         user_id = cb.from_user.id
         try:
-            cursor.execute("""
-                SELECT batch_id, folder_name, total_photos, total_videos, total_other, forward_allowed
-                FROM batches
-                WHERE user_id = ? AND status = 'finished' AND folder_name IS NOT NULL AND folder_name != ''
-                ORDER BY timestamp DESC
-                LIMIT 50
-            """, (user_id,))
-            folders = cursor.fetchall()
+            folders = get_user_folders(user_id, limit=50)
             if not folders:
                 try:
                     if cb and getattr(cb, "message", None):
@@ -288,26 +281,14 @@ def register_common(app):
                     pass
                 return
 
-            rows = []
-            for r in folders:
-                try:
-                    bid = r["batch_id"]
-                    fname = r["folder_name"]
-                    p = r["total_photos"]
-                    v = r["total_videos"]
-                    o = r["total_other"]
-                    fa = r["forward_allowed"]
-                except Exception:
-                    bid, fname, p, v, o, fa = r[0], r[1], r[2], r[3], r[4], r[5]
-                rows.append((bid, fname, p, v, o, fa))
             try:
                 if cb and getattr(cb, "message", None):
-                    await cb.message.edit_text("📂 管理我的文件夹（显示最近50个）", reply_markup=folder_list_menu(user_id, rows, from_finish=False))
+                    await cb.message.edit_text("📂 管理我的文件夹（显示最近50个）", reply_markup=folder_list_menu(user_id, folders, from_finish=False))
                 else:
-                    await client.send_message(user_id, "📂 管理我的文件夹（显示最近50个）", reply_markup=folder_list_menu(user_id, rows, from_finish=False))
+                    await client.send_message(user_id, "📂 管理我的文件夹（显示最近50个）", reply_markup=folder_list_menu(user_id, folders, from_finish=False))
             except Exception:
                 try:
-                    await client.send_message(user_id, "📂 管理我的文件夹（显示最近50个）", reply_markup=folder_list_menu(user_id, rows, from_finish=False))
+                    await client.send_message(user_id, "📂 管理我的文件夹（显示最近50个）", reply_markup=folder_list_menu(user_id, folders, from_finish=False))
                 except Exception:
                     pass
             try:
