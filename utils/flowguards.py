@@ -13,14 +13,18 @@ from copy import deepcopy
 
 # 导入主 DB 连接和锁（若不可用则创建本地）
 try:
-    from db import conn as _main_conn, db_lock as _main_lock
-    _conn = _main_conn
+    from db import cursor as _cursor, conn as _conn_proxy, db_lock as _main_lock
+    _conn = None  # Will use cursor instead
     _lock = _main_lock
+    _use_cursor = True
 except Exception:
     # fallback: create local db
     _conn = sqlite3.connect("flowguards.db", check_same_thread=False)
     _conn.row_factory = sqlite3.Row
+    _cursor = None
     _lock = threading.Lock()
+    _conn_proxy = None
+    _use_cursor = False
 
 def _now_ts():
     return int(time.time())
@@ -29,17 +33,32 @@ def _init_table():
     """初始化 user_flows 表（若不存在）"""
     try:
         with _lock:
-            _conn.execute("""
-                CREATE TABLE IF NOT EXISTS user_flows (
-                    user_id INTEGER PRIMARY KEY,
-                    flow_name TEXT NOT NULL,
-                    step_json TEXT,
-                    meta_json TEXT,
-                    created_at INTEGER NOT NULL,
-                    ttl INTEGER
-                )
-            """)
-            _conn.commit()
+            if _use_cursor:
+                # Use cursor from db.py
+                _cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_flows (
+                        user_id INTEGER PRIMARY KEY,
+                        flow_name TEXT NOT NULL,
+                        step_json TEXT,
+                        meta_json TEXT,
+                        created_at INTEGER NOT NULL,
+                        ttl INTEGER
+                    )
+                """)
+                _conn_proxy.commit()
+            else:
+                # Use local connection
+                _conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_flows (
+                        user_id INTEGER PRIMARY KEY,
+                        flow_name TEXT NOT NULL,
+                        step_json TEXT,
+                        meta_json TEXT,
+                        created_at INTEGER NOT NULL,
+                        ttl INTEGER
+                    )
+                """)
+                _conn.commit()
     except Exception as e:
         print(f"[flowguards] _init_table error: {e}")
 
@@ -103,11 +122,18 @@ def set_flow(user_id, flow_name, payload=None, ttl=None):
         with _lock:
             step_json = json.dumps(step, ensure_ascii=False) if step is not None else None
             meta_json = json.dumps(meta, ensure_ascii=False) if meta else "{}"
-            _conn.execute("""
-                INSERT OR REPLACE INTO user_flows (user_id, flow_name, step_json, meta_json, created_at, ttl)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (uid, flow_name, step_json, meta_json, ts, ttl))
-            _conn.commit()
+            if _use_cursor:
+                _cursor.execute("""
+                    INSERT OR REPLACE INTO user_flows (user_id, flow_name, step_json, meta_json, created_at, ttl)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (uid, flow_name, step_json, meta_json, ts, ttl))
+                _conn_proxy.commit()
+            else:
+                _conn.execute("""
+                    INSERT OR REPLACE INTO user_flows (user_id, flow_name, step_json, meta_json, created_at, ttl)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (uid, flow_name, step_json, meta_json, ts, ttl))
+                _conn.commit()
     except Exception as e:
         print(f"[flowguards] set_flow DB error: {e}")
     
@@ -121,11 +147,19 @@ def get_flow(user_id):
     uid = int(user_id)
     try:
         with _lock:
-            cursor = _conn.execute("""
-                SELECT flow_name, step_json, meta_json, created_at, ttl
-                FROM user_flows WHERE user_id = ?
-            """, (uid,))
-            row = cursor.fetchone()
+            if _use_cursor:
+                _cursor.execute("""
+                    SELECT flow_name, step_json, meta_json, created_at, ttl
+                    FROM user_flows WHERE user_id = ?
+                """, (uid,))
+                row = _cursor.fetchone()
+            else:
+                cursor = _conn.execute("""
+                    SELECT flow_name, step_json, meta_json, created_at, ttl
+                    FROM user_flows WHERE user_id = ?
+                """, (uid,))
+                row = cursor.fetchone()
+            
             if not row:
                 return None
             
@@ -139,8 +173,12 @@ def get_flow(user_id):
             if ttl is not None:
                 if _now_ts() - created_at > ttl:
                     # expired, delete and return None
-                    _conn.execute("DELETE FROM user_flows WHERE user_id = ?", (uid,))
-                    _conn.commit()
+                    if _use_cursor:
+                        _cursor.execute("DELETE FROM user_flows WHERE user_id = ?", (uid,))
+                        _conn_proxy.commit()
+                    else:
+                        _conn.execute("DELETE FROM user_flows WHERE user_id = ?", (uid,))
+                        _conn.commit()
                     return None
             
             # parse JSON
@@ -170,8 +208,12 @@ def clear_flow(user_id):
     uid = int(user_id)
     try:
         with _lock:
-            _conn.execute("DELETE FROM user_flows WHERE user_id = ?", (uid,))
-            _conn.commit()
+            if _use_cursor:
+                _cursor.execute("DELETE FROM user_flows WHERE user_id = ?", (uid,))
+                _conn_proxy.commit()
+            else:
+                _conn.execute("DELETE FROM user_flows WHERE user_id = ?", (uid,))
+                _conn.commit()
     except Exception as e:
         print(f"[flowguards] clear_flow error: {e}")
 
@@ -196,11 +238,18 @@ def update_step(user_id, new_step):
         ts = _now_ts()
         
         with _lock:
-            _conn.execute("""
-                UPDATE user_flows SET step_json = ?, created_at = ?
-                WHERE user_id = ?
-            """, (step_json, ts, uid))
-            _conn.commit()
+            if _use_cursor:
+                _cursor.execute("""
+                    UPDATE user_flows SET step_json = ?, created_at = ?
+                    WHERE user_id = ?
+                """, (step_json, ts, uid))
+                _conn_proxy.commit()
+            else:
+                _conn.execute("""
+                    UPDATE user_flows SET step_json = ?, created_at = ?
+                    WHERE user_id = ?
+                """, (step_json, ts, uid))
+                _conn.commit()
         
         # return updated flow
         current["step"] = deepcopy(new_step)
@@ -234,11 +283,18 @@ def set_meta(user_id, meta_dict):
         ts = _now_ts()
         
         with _lock:
-            _conn.execute("""
-                UPDATE user_flows SET meta_json = ?, created_at = ?
-                WHERE user_id = ?
-            """, (meta_json, ts, uid))
-            _conn.commit()
+            if _use_cursor:
+                _cursor.execute("""
+                    UPDATE user_flows SET meta_json = ?, created_at = ?
+                    WHERE user_id = ?
+                """, (meta_json, ts, uid))
+                _conn_proxy.commit()
+            else:
+                _conn.execute("""
+                    UPDATE user_flows SET meta_json = ?, created_at = ?
+                    WHERE user_id = ?
+                """, (meta_json, ts, uid))
+                _conn.commit()
         
         current["meta"] = existing_meta
         current["ts"] = ts
@@ -251,8 +307,13 @@ def set_meta(user_id, meta_dict):
 def _dump_all():
     try:
         with _lock:
-            cursor = _conn.execute("SELECT user_id, flow_name, step_json, meta_json, created_at, ttl FROM user_flows")
-            rows = cursor.fetchall()
+            if _use_cursor:
+                _cursor.execute("SELECT user_id, flow_name, step_json, meta_json, created_at, ttl FROM user_flows")
+                rows = _cursor.fetchall()
+            else:
+                cursor = _conn.execute("SELECT user_id, flow_name, step_json, meta_json, created_at, ttl FROM user_flows")
+                rows = cursor.fetchall()
+            
             result = {}
             for r in rows:
                 uid = r[0]
