@@ -16,6 +16,7 @@ from handlers.broadcast import register_broadcast
 from handlers.callback import register_callback
 from handlers.debug_logger import register_debug_logger
 from handlers.common import register_common
+from handlers.callback_fallback import register_callback_fallback
 from vipscenter.handlers import register_vipscenter
 
 # optional userbot manager
@@ -41,19 +42,21 @@ async def run_app():
     # init db
     try:
         init_db()
-    except Exception:
-        pass
+        print("📊 数据库初始化完成")
+    except Exception as e:
+        print(f"⚠️ 数据库初始化失败: {e}")
 
     # register core handlers (upload prior)
+    print("📝 注册核心处理器...")
     register_start(app)
     register_upload(app)
 
     # register vipscenter
     try:
         register_vipscenter(app)
-        print("[main] register_vipscenter called")
+        print("✅ VIP 中心模块已注册")
     except Exception as e:
-        print("[main] register_vipscenter failed:", e)
+        print(f"⚠️ VIP 中心模块注册失败: {e}")
 
     # dynamic import bindbot to avoid import-time dependency issues
     register_bindbot = None
@@ -62,37 +65,45 @@ async def run_app():
         from vipscenter.bindbot import register_bindbot as _rb, set_userbot_manager as _sum
         register_bindbot = _rb
         set_userbot_manager = _sum
-        print("[main] vipscenter.bindbot imported successfully")
+        print("✅ 机器人绑定模块导入成功")
     except Exception as e:
-        print("[main] vipscenter.bindbot import failed (continuing):", e)
+        print(f"⚠️ 机器人绑定模块导入失败: {e}")
 
     if register_bindbot:
         try:
             register_bindbot(app)
-            print("[main] bindbot.register_bindbot called")
+            print("✅ 机器人绑定处理器已注册")
             if set_userbot_manager and _manager:
                 try:
                     set_userbot_manager(_manager)
-                except Exception:
-                    pass
+                    print("✅ 用户机器人管理器已设置")
+                except Exception as e:
+                    print(f"⚠️ 设置用户机器人管理器失败: {e}")
         except Exception as e:
-            print("[main] bindbot.register_bindbot failed:", e)
+            print(f"⚠️ 机器人绑定处理器注册失败: {e}")
 
     # remaining modules
     register_broadcast(app)
     register_buttonpost(app)
     register_share(app)
+    print("✅ 广播、广告图、分享模块已注册")
 
     # common handlers (menus, admin pages)
     register_common(app)
+    print("✅ 通用处理器已注册")
 
     # generic callback + debug logger
     register_callback(app)
     register_debug_logger(app)
+    print("✅ 回调处理器和调试日志已注册")
+    
+    # callback fallback (lowest priority)
+    register_callback_fallback(app)
+    print("✅ 回调兜底处理器已注册")
 
     # start
     await app.start()
-    print("机器人已启动。")
+    print("✅ 机器人已启动成功")
 
     # try load userbots if manager supports it
     if _manager:
@@ -100,9 +111,9 @@ async def run_app():
             if hasattr(_manager, "load_all"):
                 try:
                     _manager.load_all()
-                    print("[main] userbot manager: load_all() invoked")
-                except Exception:
-                    pass
+                    print("✅ 用户机器人管理器: load_all() 已调用")
+                except Exception as e:
+                    print(f"⚠️ 用户机器人管理器 load_all() 失败: {e}")
         except Exception:
             pass
 
@@ -125,26 +136,26 @@ async def run_app():
     try:
         await stop_event.wait()
     finally:
-        print("[main] stopping app...")
+        print("🛑 正在停止机器人...")
         try:
             await app.stop()
-            print("[main] app stopped")
+            print("✅ 机器人已停止")
         except Exception as e:
-            print("[main] app.stop() error:", e)
+            print(f"⚠️ 停止机器人时出错: {e}")
 
 
 def main():
+    print("=" * 50)
+    print("🚀 云存储机器人正在启动...")
+    print("=" * 50)
     try:
         asyncio.run(run_app())
     except KeyboardInterrupt:
-        print("[main] KeyboardInterrupt received, exiting")
+        print("\n⚠️ 收到键盘中断信号，正在退出...")
     except Exception as e:
-        print("[main] unhandled exception:", e)
+        print(f"❌ 未处理的异常: {e}")
     finally:
-        try:
-            print("[main] exit")
-        except Exception:
-            pass
+        print("👋 程序已退出")
 
 
 if __name__ == "__main__":
