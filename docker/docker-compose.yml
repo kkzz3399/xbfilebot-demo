@@ -1,0 +1,43 @@
+version: "3.8"
+services:
+  bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bot
+    env_file:
+      - ../.env            # 从项目根加载 .env
+    environment:
+      # environment 中的变量会覆盖 env_file 中的值（用于 production 覆盖）
+      # 也可以在这里直接写敏感变量（不推荐，建议用 secrets）
+      # BOT_TOKEN: "override_token_here"
+      # DB_URL: "override_db_url"
+    depends_on:
+      - db
+      - redis
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    env_file:
+      - ../.env
+    environment:
+      # Additional overrides for web 管理端
+      # ADMIN_API_KEYS: '["web_key1","web_key2"]'
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: xb_user
+      POSTGRES_PASSWORD: xb_pass
+      POSTGRES_DB: xbparsing
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+
+volumes:
+  db-data:
